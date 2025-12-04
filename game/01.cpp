@@ -7,9 +7,10 @@
 #include <vector>
 
 int main() {
-    // ================================================================
-    // |   0. Please uncomment the specific section to run the test   |
-    // ================================================================
+    // ==========================================================================
+    // |   Please run the whole code at the same time.                          |
+    // |   To save time, it is recommended to compile game.cpp with AIplayer.   |
+    // ==========================================================================
 
     std::cout << "Hello! This is the Big2 Game Module Test Program.\n\n";
 
