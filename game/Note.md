@@ -1,11 +1,8 @@
 1.  The game logic is almost completed, but further minor adjustments are still necessary.
 2.  Cpps related to DB are not completed, but a rough framework has been configured.
 3.  Cpps related to DB: 01.cpp, database.cpp.
-4.  Cpps for test: 01.cpp, test.cpp.
-5.  Before running test.cpp ...
-    a.  Must follow the specific compiling command.
-    b.  The mixed agents are not implemented yet. Currently, in a game, all players are human, or all are bots, i.e., they are just automatically playing cards, no other algorithms implemented.
-    c.  Must check Game.cpp, line 30, "players.emplace_back(std::make_unique<XXXXXPlayer>(i));". It determines which one of the agents is compiled.
+4.  Cpps for test: 01.cpp.
+5.  The functionality of test.cpp is integrated in 01.cpp, so it is removed and no longer used.
 6.  Before running 01.cpp ...
     a.  Must be sure to activate MySQL in VM.
     b.  Must be sure to use identical tables, or the query string in database.cpp should be edited.
