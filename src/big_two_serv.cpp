@@ -1,10 +1,37 @@
-#include "../game/database.h"
-#include "../game/game.h"
+#include "game.h"
 
 extern "C"{
   #include "../../../lib/unp.h"
   #include <stdbool.h>
   #include <errno.h>
+  #include <sys/time.h>
+}
+
+class MyGame : Game {
+public:
+    void displayGameStateForPlayer(int player_seat, const char *palyer_name, char *buffer) const{
+        std::ostringstream msg; 
+        msg << "Player #" << player_seat + 1 << " " << player_name << " hand: "
+                  << players[player_seat]->getHand().HandToString();
+        if (!activePlayers[player_seat]) msg << " (Inactive)";
+        msg << "\n";
+       
+        std::cout << "\n";
+        if (firstPlay) msg << "First play.\n";
+        msg << "Current round: " << currentRound << "\n";
+        msg << "Current player: Player " << currentPlayer + 1 << "\n";
+        msg << "Last play: " << comboToString(lastPlay.getCards()) << "\n";
+        msg << "Players passed this round:";
+        for(int i = 0; i < TOTAL_PLAYERS; ++i){
+            if (!activePlayers[i]) continue;
+            if (passedRound[i]) msg << " " << i + 1;
+        }
+        msg << "\n";
+        msg << "--------------------------------\n";
+        const char *result = msg.str().c_str();
+        memcpy(buffer, result, MAXLINE);
+        return;
+    }
 }
 
 void sig_chld(int sig){
@@ -25,6 +52,7 @@ main(int argc, char **argv)
 	char      sendline[MAXLINE], recvline[MAXLINE];
 	char      id[4][32];
 	bool      is_connected[4];
+	MyGame game;
 	
 
 	listenfd = Socket(AF_INET, SOCK_STREAM, 0);
@@ -40,6 +68,13 @@ main(int argc, char **argv)
 	int opt = 1;
 	if (setsockopt(listenfd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0) {
 	    perror("setsockopt(SO_REUSEADDR) failed");
+	    close(listenfd);
+	    exit(1);
+	}
+	/* Set socket receive timeout option */
+	struct timeval accept_timeout = {6, 0};  // 6 seconds
+	if (setsockopt(listenfd, SOL_SOCKET, SO_RCVTIMEO, &accept_timeout, sizeof(accept_timeout)) < 0) {
+	    perror("setsockopt(SO_RCVTIMEO) failed");
 	    close(listenfd);
 	    exit(1);
 	}
@@ -68,8 +103,10 @@ main(int argc, char **argv)
 		  if ( (connfd[j][i] = accept(listenfd, (SA *) &cliaddr[j], &clilen[j])) < 0) {
 		      if (errno == EINTR)
 		          continue;		/* interrupted, back to next iteration of for() */
-		      else
-		          err_sys("accept error");
+		      else{
+		          printf("accept error: %s", strerror(errno)); 
+		          continue;
+		      }
 		  }
 		  
 		  /* recv j-th client's id */
@@ -91,7 +128,6 @@ main(int argc, char **argv)
 		  // successfully add a client
 		  is_connected[j] = true;
 		  j++;
-		  
                 }
 		/* end of parent accepting stage */
 		
@@ -110,7 +146,6 @@ main(int argc, char **argv)
 			int cli_turn = 0;
 			Close(listenfd);	/* close listening socket */
 			
-			Game game;
 			game.startGame();
 			
 			// game starts
@@ -205,8 +240,18 @@ main(int argc, char **argv)
 				            printf("debug: not client#%d's turn\n", j + 1);
 				        }
 				    }
-			            /* next client */
 		                }
+		                // update board state to players
+		                if(!game.isGameOver()){
+		                    for(int k = 0; k < 4; k++){
+			                if(is_connected[k]){
+			                    bzero(sendline, MAXLINE);
+		                            game.displayGameStateForPlayer(k, id[k], sendline);
+		                            Writen(connfd[k][i], sendline, strlen(sendline));
+			                }
+			            }
+		                }
+			        /* next client */
 			    }
 		    }
 		    /* all clients have terminated, exit */
