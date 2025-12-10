@@ -12,13 +12,14 @@
 static MYSQL* conn = nullptr;
 
 static int penalty_calc(const std::vector<Card>& hand) {
-    int penalty = 0;
     int number_of_cards = static_cast<int>(hand.size());
+    int penalty = 0;
+    
     int countTwos = 0;
     for (const auto& card : hand) {
         if (card.getrank() == Rank::Two) countTwos++;
     }
-    penalty += countTwos * std::max(countTwos, 1);
+    penalty += number_of_cards * std::max(countTwos, 1);
     return penalty * (-1);
 }
 
@@ -83,7 +84,7 @@ void new_player_reg() {
 
     std::string password_hash = hash_password(pwd);
     if (!conn) return;
-    std::string query = "INSERT INTO players (name, password_hash, total_score, wins, losses) VALUES ('" +
+    std::string query = "INSERT INTO players (bot, name, password_hash, total_score, wins, losses) VALUES (0, '" +
                         username + "', '" + password_hash + "', 1000, 0, 0);";
 
     if (mysql_query(conn, query.c_str())) {
@@ -131,7 +132,7 @@ bool player_login(int& db_id, std::string& username_out) {
 
         std::string password_hashed = hash_password(pwd);
         std::string query = "SELECT id, name FROM players WHERE name = '" + username +
-                            "' AND password_hash = '" + password_hashed + "';";
+                            "' AND password_hash = '" + password_hashed + "' AND bot = 0 AND in_game = 0;";
 
         if (mysql_query(conn, query.c_str())) {
             std::cerr << "Login error: " << mysql_error(conn) << "\n";
@@ -145,6 +146,13 @@ bool player_login(int& db_id, std::string& username_out) {
             db_id = std::stoi(row[0]);
             username_out = row[1];
             mysql_free_result(res);
+
+            std::string updatequery = "UPDATE players SET in_game = 1, last_login = NOW() WHERE id = " + std::to_string(db_id) + ";";
+
+            if (mysql_query(conn, updatequery.c_str())) {
+                std::cerr << "Update last login error: " << mysql_error(conn) << "\n";
+            }
+
             std::cout << "Login successful. Welcome back, " << username_out << "!\n";
             return true;
         } else {
@@ -174,7 +182,7 @@ bool update_player_score(const std::string& player_name, int score_delta) {
 void display_leaderboard(int top_n) {
     if (!conn) return;
 
-    std::string query = "SELECT name, total_score, wins, losses FROM players ORDER BY total_score DESC LIMIT " + std::to_string(top_n) + ";";
+    std::string query = "SELECT name, total_score, wins, losses FROM players WHERE bot = 0 ORDER BY total_score DESC LIMIT " + std::to_string(top_n) + ";";
 
     if (mysql_query(conn, query.c_str())) {
         std::cerr << "Query error: " << mysql_error(conn) << "\n";
@@ -189,22 +197,22 @@ void display_leaderboard(int top_n) {
 
     MYSQL_ROW row;
     std::cout << "\n";
-    std::cout << "====== Leaderboard ======\n";
-    std::cout << std::left << std::setw(15) << "Player Name"
+    std::cout << "================ Leaderboard ================\n";
+    std::cout << std::left << std::setw(19) << "Player_Name"
               << std::setw(10) << "Score"
               << std::setw(10) << "Wins"
               << std::setw(10) << "Losses" << "\n";
-    std::cout << "=========================\n";
+    std::cout << "=============================================\n";
 
     while ((row = mysql_fetch_row(res))) {
-        std::cout << std::left << std::setw(15) << row[0]
+        std::cout << std::left << std::setw(19) << row[0]
                   << std::setw(10) << row[1]
                   << std::setw(10) << row[2]
                   << std::setw(10) << row[3] << "\n";
     }
 
     mysql_free_result(res);
-    std::cout << "=========================\n";
+    std::cout << "=============================================\n";
 }
 
 // Generate hash password
@@ -288,12 +296,13 @@ bool save_result_to_DB(const Game& game) {
     // Insert player results and update player table
     for (int i = 0; i < playerCount; ++i) {
         int db_id = players[i]->getDBId();
+        int seat_index = players[i]->getseatIndex();
         int score_delta = deltas[i];
         bool is_winner = (i == winnerSeat);
 
         std::stringstream resultQuery;
-        resultQuery << "INSERT INTO match_players (match_id, player_id, score_change, is_winner) VALUES ("
-                    << match_id << ", " << db_id << ", " << score_delta << ", " << (is_winner ? 1 : 0) << ");";
+        resultQuery << "INSERT INTO match_players (match_id, player_id, seat_index, score_change, is_winner) VALUES ("
+                    << match_id << ", " << db_id << ", " << seat_index + 1 << ", " << score_delta << ", " << (is_winner ? 1 : 0) << ");";
         if (mysql_query(conn, resultQuery.str().c_str())) {
             std::cerr << "Match result insert error for player " << db_id << ": " << mysql_error(conn) << "\n";
             mysql_query(conn, "ROLLBACK;");
@@ -323,5 +332,150 @@ bool save_result_to_DB(const Game& game) {
     }
 
     std::cout << "Game results successfully saved to the database.\n";
+    return true;
+}
+
+bool set_specified_player_online_status(int db_id, bool is_online) {
+    if (!conn) {
+        std::cerr << "No active database connection.\n";
+        return false;
+    }
+    if (db_id < 0) return false;
+
+    std::string query = "UPDATE players SET is_online = " + std::to_string(is_online ? 1 : 0) +
+                        " WHERE id = " + std::to_string(db_id) + ";";
+
+    if (mysql_query(conn, query.c_str())) {
+        std::cerr << "Update online status error: " << mysql_error(conn) << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+// Set all players to be online
+bool set_all_players_online(const std::vector<int>& db_ids, bool is_online) {
+    if (!conn) {
+        std::cerr << "No active database connection.\n";
+        return false;
+    }
+
+    if (db_ids.empty()) return true;
+
+    std::stringstream updateQuery;
+    updateQuery << "UPDATE players SET is_online = " << (is_online ? 1 : 0) << " WHERE id IN (";
+    bool first = true;
+    for (int id : db_ids) {
+        if (id < 0) continue;
+        if (!first) updateQuery << ", ";
+        updateQuery << id;
+        first = false;
+    }
+    updateQuery << ");";
+
+    if (first) return true; // No valid IDs to update
+
+    if (mysql_query(conn, updateQuery.str().c_str())) {
+        std::cerr << "Update online status error: " << mysql_error(conn) << "\n";
+        return false;
+    }
+
+    return true;
+}
+
+// Take AI Agent from DB
+bool acquire_AI_Agent_From_DB(int needed, std::vector<int>& AI_ids, std::vector<std::string>& AI_names) {
+    if (!conn) {
+        std::cerr << "No active database connection.\n";
+        return false;
+    }
+
+    if (needed <= 0) {
+        AI_ids.clear();
+        AI_names.clear();
+        return true;
+    }
+
+    AI_ids.clear();
+    AI_names.clear();
+
+    if (mysql_query(conn, "START TRANSACTION;")) {
+        std::cerr << "Transaction start error: " << mysql_error(conn) << "\n";
+        return false;
+    }
+
+    std::string query = "SELECT id, name FROM players WHERE bot = 1 AND in_game = 0 LIMIT " + std::to_string(needed) + " FOR UPDATE;";
+    if (mysql_query(conn, query.c_str())) {
+        std::cerr << "AI selection error: " << mysql_error(conn) << "\n";
+        mysql_query(conn, "ROLLBACK;");
+        return false;
+    }
+
+    MYSQL_RES* res = mysql_store_result(conn);
+    if (!res) {
+        std::cerr << "Store result error: " << mysql_error(conn) << "\n";
+        mysql_query(conn, "ROLLBACK;");
+        return false;
+    }
+
+    MYSQL_ROW row;
+    while ((row = mysql_fetch_row(res))) {
+        AI_ids.push_back(std::stoi(row[0]));
+        AI_names.push_back(row[1]);
+    }
+
+    mysql_free_result(res);
+
+    if (static_cast<int>(AI_ids.size()) < needed) {
+        std::cerr << "Not enough available AI agents.\n";
+        mysql_query(conn, "ROLLBACK;");
+        return false;
+    }
+
+    std::stringstream updateQuery;
+    updateQuery << "UPDATE players SET in_game = 1 WHERE id IN (";
+    for (size_t i = 0; i < AI_ids.size(); ++i) {
+        if (i > 0) updateQuery << ", ";
+        updateQuery << AI_ids[i];
+    }
+    updateQuery << ");";
+
+    if (mysql_query(conn, updateQuery.str().c_str())) {
+        std::cerr << "AI update error: " << mysql_error(conn) << "\n";
+        mysql_query(conn, "ROLLBACK;");
+        return false;
+    }
+
+    if (mysql_query(conn, "COMMIT;")) {
+        std::cerr << "Transaction commit error: " << mysql_error(conn) << "\n";
+        mysql_query(conn, "ROLLBACK;");
+        return false;
+    }
+
+    return true;
+}
+
+// Release AI Agent to DB
+bool release_Agents_To_DB(const std::vector<int>& ids) {
+    if (!conn) {
+        std::cerr << "No active database connection.\n";
+        return false;
+    }
+
+    if (ids.empty()) return true;
+
+    std::stringstream updateQuery;
+    updateQuery << "UPDATE players SET in_game = 0 WHERE id IN (";
+    for (size_t i = 0; i < ids.size(); ++i) {
+        if (i > 0) updateQuery << ", ";
+        updateQuery << ids[i];
+    }
+    updateQuery << ");";
+
+    if (mysql_query(conn, updateQuery.str().c_str())) {
+        std::cerr << "AI release error: " << mysql_error(conn) << "\n";
+        return false;
+    }
+
     return true;
 }

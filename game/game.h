@@ -34,6 +34,16 @@ private:
     bool gameOver;
     int winnerIndex;
     std::vector<bool> activePlayers;
+    std::vector<PlayerType> playerTypes;
+    std::vector<int> seatDB_IDs;
+    std::vector<bool> isOnline;
+    std::vector<Card> getHumanPlayerTimeOut(
+        int playerIndex,
+        const std::vector<std::vector<Card>>& legalActions,
+        bool canPass,
+        bool& timedOut,
+        int timeLimitSeconds = 30
+    );
 
     bool isLegalFollow(const std::vector<Card>& move) const;
     bool ClearRound() const;
@@ -46,11 +56,14 @@ private:
 public:
     Game();
 
+    void initializePlayers(const std::vector<PlayerType>& types);
     void startGame();
     bool takeTurn();
     void runAutoRound(int maxTurns = 1000);
     void nextTurn();
     bool isGameOver() const;
+    void setSeatOnline(int seatIndex, bool is_online);
+    bool isSeatOnline(int seatIndex) const;
     int getWinner() const;
     void displayGameState() const;
     void setActivePlayers(const std::vector<bool>& active);
@@ -58,6 +71,7 @@ public:
     const Hand& getPlayerHand(int playerIndex) const;
     const Combination& getLastPlay() const;
     void setLastPlay(const Combination& combo);
+    void setSeatDB_IDs(const std::vector<int>& db_ids);
     std::vector<std::unique_ptr<Player>>& getPlayers();
     std::vector<std::vector<Card>> getLegalActions(int playerIndex) const;
     GameResult getGameResult() const;

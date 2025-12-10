@@ -6,6 +6,8 @@
 #include "hand.h"
 #include "combination.h"
 
+enum class PlayerType {Human, AI};
+
 class Player {
 protected:
     int seatIndex; // Player seat index (0-3)

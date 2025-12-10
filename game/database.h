@@ -36,4 +36,15 @@ std::string hash_password(const std::string& password);
 // Additional database functions
 bool save_result_to_DB(const Game& game);
 
+// Take AI Agent from DB
+bool acquire_AI_Agent_From_DB(int needed, std::vector<int>& AI_ids, std::vector<std::string>& AI_names);
+
+// Release AI Agent to DB
+bool release_Agents_To_DB(const std::vector<int>& ids);
+
+// Set all players to be online
+bool set_all_players_online(const std::vector<int>& db_ids, bool is_online);
+
+// Set specified players to be online/offline
+bool set_players_online_status(int db_id, bool is_online);
 #endif // DATABASE_H

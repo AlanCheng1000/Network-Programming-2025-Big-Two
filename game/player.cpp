@@ -51,7 +51,7 @@ HumanPlayer::HumanPlayer(int seatIndex, int DB_id) : Player(seatIndex, DB_id) {}
 
 std::vector<Card> HumanPlayer::playTurn(const Combination& lastPlay, const std::vector<std::vector<Card>>& legalActions, bool canPass) {
     (void)lastPlay; // Unused parameter for now
-    std::cout << "Player " << getseatIndex() + 1 << " (" << getTypeName() << ")'s turn.\n";
+    std::cout << "Seat " << getseatIndex() + 1 << "'s turn.\n";
     std::cout << "Your hand: " << hand.HandToString() << "\n";
     
     if (legalActions.empty()) { std::cout << "No legal actions. Forced PASS.\n"; return {}; }

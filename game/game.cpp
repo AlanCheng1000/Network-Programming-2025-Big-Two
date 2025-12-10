@@ -2,6 +2,9 @@
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
+#include <thread>
+#include <future>
+#include <chrono>
 
 namespace {
     inline bool has3C(const std::vector<Card>& v){
@@ -22,12 +25,64 @@ namespace {
 }
 
 Game::Game() : lastPlay(), lastPlayer(-1), currentPlayer(0), firstPlay(true), currentRound(1), passedRound(TOTAL_PLAYERS, false), gameOver(false), winnerIndex(-1)
-    , activePlayers(TOTAL_PLAYERS, true) {}
+    , activePlayers(TOTAL_PLAYERS, true), playerTypes(TOTAL_PLAYERS, PlayerType::AI), seatDB_IDs(TOTAL_PLAYERS, -1), isOnline(TOTAL_PLAYERS, true) {}
+
+void Game::initializePlayers(const std::vector<PlayerType>& types) {
+    if (types.size() != TOTAL_PLAYERS) {
+        throw std::invalid_argument("Player types size must be equal to TOTAL_PLAYERS.");
+    }
+
+    bool hasHuman = false;
+    for (auto t : types) {
+        if (t == PlayerType::Human) { hasHuman = true; break; }
+    }
+    if (!hasHuman) {
+        throw std::invalid_argument("At least one Human player is required.");
+    }
+
+    playerTypes = types;
+}
+
+void Game::setSeatOnline(int seatIndex, bool is_online) {
+    if (seatIndex < 0 || seatIndex >= TOTAL_PLAYERS) {
+        throw std::out_of_range("Seat index out of range.");
+    }
+    isOnline[seatIndex] = is_online;
+}
+
+bool Game::isSeatOnline(int seatIndex) const {
+    if (seatIndex < 0 || seatIndex >= TOTAL_PLAYERS) {
+        throw std::out_of_range("Seat index out of range.");
+    }
+    return isOnline[seatIndex];
+}
+
+void Game::setSeatDB_IDs(const std::vector<int>& db_ids) {
+    if (db_ids.size() != TOTAL_PLAYERS) throw std::invalid_argument("DB IDs size must be 4.");
+    seatDB_IDs = db_ids;
+}
 
 void Game::startGame() {
     players.clear();
-    for (int i = 0; i < TOTAL_PLAYERS; ++i)
-        players.emplace_back(std::make_unique<AIPlayer>(i));
+
+    // In case: if no config is provided, default to all AI players
+    if (playerTypes.size() != TOTAL_PLAYERS) {
+        playerTypes.assign(TOTAL_PLAYERS, PlayerType::AI);
+    }
+
+    for (int i = 0; i < TOTAL_PLAYERS; ++i) {
+        if (playerTypes[i] == PlayerType::Human) {
+            players.emplace_back(std::make_unique<HumanPlayer>(i));
+        } else {
+            players.emplace_back(std::make_unique<AIPlayer>(i));
+        }
+    }
+
+    if (seatDB_IDs.size() == TOTAL_PLAYERS) {
+        for (int i = 0; i < TOTAL_PLAYERS; ++i) {
+            if (seatDB_IDs[i] >= 0) players[i]->setDBId(seatDB_IDs[i]);
+        }
+    }
 
     deck.reset();
     deck.shuffle();
@@ -47,7 +102,7 @@ void Game::startGame() {
 
     // Find 3C holder
     currentPlayer = findStartingPlayer();
-    std::cout << "Player " << currentPlayer+1 << " holds 3C and starts the first play.\n";
+    std::cout << "Seat " << currentPlayer + 1 << " holds 3C and starts the first play.\n";
 }
 
 int Game::findStartingPlayer() const {
@@ -110,7 +165,7 @@ bool Game::ClearRound() const {
 
 void Game::resetRound(){
     ++currentRound;
-    std::cout << "Current round ends. Player " << lastPlayer + 1 << " leads a new round.\n";
+    std::cout << "Current round ends. Seat " << lastPlayer + 1 << " leads a new round.\n";
     lastPlay    = Combination(); // Clear combination
 
     passedRound.assign(TOTAL_PLAYERS, false);
@@ -128,12 +183,12 @@ void Game::checkValidPlay(const std::vector<Card>& move){
 
     if (firstPlay) firstPlay = false;
 
-    std::cout << "Player " << currentPlayer + 1 << " played: " << comboToString(move) << "\n";
+    std::cout << "Seat " << currentPlayer + 1 << " played: " << comboToString(move) << "\n";
 
     if (players[currentPlayer]->getHand().HandSize() == 0){
         gameOver = true;
         winnerIndex = currentPlayer;
-        std::cout << "\nPlayer " << winnerIndex + 1 << " wins the game!\n";
+        std::cout << "\nSeat " << winnerIndex + 1 << " wins the game!\n";
     } else {
         nextTurn();
     }
@@ -184,7 +239,7 @@ bool Game::takeTurn() {
     auto legalActions = getLegalActions(currentPlayer);
 
     if (legalActions.empty()) {
-        std::cout << "No legal actions for Player " << currentPlayer + 1 << ". Forced PASS.\n";
+        std::cout << "No legal actions for Seat " << currentPlayer + 1 << ". Forced PASS.\n";
         passedRound[currentPlayer] = true;
 
         if (ClearRound()) { resetRound(); return true; }
@@ -195,10 +250,25 @@ bool Game::takeTurn() {
 
     bool canPass = !newRound;
 
-    auto move = players[currentPlayer]->playTurn(lastPlay, legalActions, canPass);
+    std::vector<Card> move;
+    bool timedOut = false;
+
+    if (playerTypes[currentPlayer] == PlayerType::Human) {
+        move = getHumanPlayerTimeOut(currentPlayer, legalActions, canPass, timedOut, 30);
+    } else {
+        move = players[currentPlayer]->playTurn(lastPlay, legalActions, canPass);
+    }
+
+    if (timedOut) {
+        passedRound[currentPlayer] = true;
+
+        if (ClearRound()) { resetRound(); return true; }
+        nextTurn();
+        return true;
+    }
 
     if (!isLegalFollow(move)){
-        std::cout << "Illegal move by Player " << currentPlayer + 1 << ". Move treated as PASS.\n";
+        std::cout << "Illegal move by Seat " << currentPlayer + 1 << ". Move treated as PASS.\n";
 
         passedRound[currentPlayer] = true;
 
@@ -210,7 +280,7 @@ bool Game::takeTurn() {
 
     // PASS
     if (move.empty()){
-        std::cout << "Player " << currentPlayer + 1 << " passes.\n";
+        std::cout << "Seat " << currentPlayer + 1 << " passes.\n";
         passedRound[currentPlayer] = true;
 
         if (ClearRound()) { resetRound(); return true; }
@@ -221,6 +291,43 @@ bool Game::takeTurn() {
 
     checkValidPlay(move);
     return true;
+}
+
+// Time out handling for human players
+std::vector<Card> Game::getHumanPlayerTimeOut(
+    int playerIndex,
+    const std::vector<std::vector<Card>>& legalActions,
+    bool canPass,
+    bool& timedOut,
+    int timeLimitSeconds
+) {
+    using Move = std::vector<Card>;
+    timedOut = false;
+
+    auto task = std::packaged_task<Move()>([this, playerIndex, &legalActions, canPass]() {
+        return players[playerIndex]->playTurn(lastPlay, legalActions, canPass);
+    });
+
+    std::future<Move> result = task.get_future();
+    std::thread threader(std::move(task));
+
+    std::cout << "Seat " << playerIndex + 1 << " (Human) has " << timeLimitSeconds << " seconds to act...\n";
+
+    for (int remaining_time = timeLimitSeconds; remaining_time > 0; --remaining_time) {
+        if (result.wait_for(std::chrono::seconds(1)) == std::future_status::ready) {
+            Move move = result.get();
+            threader.join();
+            std::cout << "\r" << std::string(50, ' ') << "\r"; // Clear line
+            return move;
+        }
+
+        std::cout << "\rSeat " << playerIndex + 1 << " (Human) timed out after " << timeLimitSeconds << " s" << std::flush;
+    }
+
+    std::cout << "\nSeat " << playerIndex + 1 << " (Human) timed out! Forced PASS.\n";
+    timedOut = true;
+    threader.detach(); // Let the thread run independently (it will be cleaned up on program exit)
+    return Move{}; // Return PASS
 }
 
 // Get all legal actions for a player
@@ -298,7 +405,7 @@ void Game::runAutoRound(int maxTurns){
 
 void Game::nextTurn() {
     currentPlayer = nextActivePlayer(currentPlayer);
-    std::cout << "It's now player " << currentPlayer + 1 << "'s turn.\n";
+    std::cout << "It's now seat " << currentPlayer + 1 << "'s turn.\n";
 }
 
 bool Game::isGameOver() const { return gameOver; }
@@ -307,17 +414,20 @@ int  Game::getWinner()  const { return winnerIndex; }
 void Game::displayGameState() const {
     std::cout << "---------- Game State ----------\n";
     for (int i = 0; i < TOTAL_PLAYERS; ++i) {
-        std::cout << "Player " << i + 1 << " hand: "
+        PlayerType pt = playerTypes[i];
+        std::cout << "Seat " << i + 1 << " ("
+                  << players[i]->getTypeName() << ") hand:\t"
                   << players[i]->getHand().HandToString();
+
         if (!activePlayers[i]) std::cout << " (Inactive)";
         std::cout << "\n";
     }
     std::cout << "\n";
     if (firstPlay) std::cout << "First play.\n";
     std::cout << "Current round: " << currentRound << "\n";
-    std::cout << "Current player: Player " << currentPlayer + 1 << "\n";
+    std::cout << "Current player: Seat " << currentPlayer + 1 << "\n";
     std::cout << "Last play: " << comboToString(lastPlay.getCards()) << "\n";
-    std::cout << "Players passed this round:";
+    std::cout << "Seats passed this round:";
     for(int i = 0; i < TOTAL_PLAYERS; ++i){
         if (!activePlayers[i]) continue;
         if (passedRound[i]) std::cout << " " << i + 1;
@@ -371,51 +481,3 @@ GameResult Game::getGameResult() const {
 
     return result;
 }
-
-// =====================================================
-//  C-style interface for external access (Python / GUI)
-// =====================================================
-
-#include <memory>
-
-static std::unique_ptr<Game> g_instance;  // Global game object pointer
-
-extern "C" {
-
-// Initialize the game
-__declspec(dllexport) void init_game() {
-    g_instance = std::make_unique<Game>();
-    g_instance->startGame();
-}
-
-// Run automated rounds (controlled by AI)
-__declspec(dllexport) void run_auto_round(int turns) {
-    if (!g_instance) {
-        std::cerr << "[Error] Game not initialized.\n";
-        return;
-    }
-    g_instance->runAutoRound(turns);
-}
-
-// Check if the game ends
-__declspec(dllexport) bool is_game_over() {
-    if (!g_instance) return false;
-    return g_instance->isGameOver();
-}
-
-// Retrieve the winner's index
-__declspec(dllexport) int get_winner() {
-    if (!g_instance) return -1;
-    return g_instance->getWinner();
-}
-
-// Show the current game state (output to console)
-__declspec(dllexport) void show_game_state() {
-    if (!g_instance) {
-        std::cerr << "[Error] Game not initialized.\n";
-        return;
-    }
-    g_instance->displayGameState();
-}
-
-} // extern "C"
