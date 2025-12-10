@@ -1,6 +1,37 @@
+#include "game.h"
+
 extern "C"{
-  #include "../../lib/unp.h"
+  #include "../../../lib/unp.h"
   #include <stdbool.h>
+  #include <errno.h>
+  #include <sys/time.h>
+}
+
+class MyGame : Game {
+public:
+    void displayGameStateForPlayer(int player_seat, const char *palyer_name, char *buffer) const{
+        std::ostringstream msg; 
+        msg << "Player #" << player_seat + 1 << " " << player_name << " hand: "
+                  << players[player_seat]->getHand().HandToString();
+        if (!activePlayers[player_seat]) msg << " (Inactive)";
+        msg << "\n";
+       
+        std::cout << "\n";
+        if (firstPlay) msg << "First play.\n";
+        msg << "Current round: " << currentRound << "\n";
+        msg << "Current player: Player " << currentPlayer + 1 << "\n";
+        msg << "Last play: " << comboToString(lastPlay.getCards()) << "\n";
+        msg << "Players passed this round:";
+        for(int i = 0; i < TOTAL_PLAYERS; ++i){
+            if (!activePlayers[i]) continue;
+            if (passedRound[i]) msg << " " << i + 1;
+        }
+        msg << "\n";
+        msg << "--------------------------------\n";
+        const char *result = msg.str().c_str();
+        memcpy(buffer, result, MAXLINE);
+        return;
+    }
 }
 
 void sig_chld(int sig){
@@ -14,17 +45,15 @@ void sig_chld(int sig){
 int
 main(int argc, char **argv)
 {
-	int					listenfd, connfd1[100], connfd2[100];
+	int					listenfd, connfd[4][100];
 	pid_t				childpid;
-	socklen_t			clilen1, clilen2;
-	struct sockaddr_in	cliaddr1, cliaddr2, servaddr;
+	socklen_t			clilen[4];
+	struct  sockaddr_in	      cliaddr[4], servaddr;
 	char      sendline[MAXLINE], recvline[MAXLINE];
-	char      id1[MAXLINE / 2], id2[MAXLINE / 2];
+	char      id[4][32];
+	bool      is_connected[4];
+	MyGame game;
 	
-	/* to use getpeername() */
-	struct sockaddr_in tcp_peeraddr; // use IPv4-specific data structure
-	socklen_t addrlen = sizeof(tcp_peeraddr);
-	char addr_str[INET_ADDRSTRLEN];
 
 	listenfd = Socket(AF_INET, SOCK_STREAM, 0);
 	
@@ -42,6 +71,13 @@ main(int argc, char **argv)
 	    close(listenfd);
 	    exit(1);
 	}
+	/* Set socket receive timeout option */
+	struct timeval accept_timeout = {6, 0};  // 6 seconds
+	if (setsockopt(listenfd, SOL_SOCKET, SO_RCVTIMEO, &accept_timeout, sizeof(accept_timeout)) < 0) {
+	    perror("setsockopt(SO_RCVTIMEO) failed");
+	    close(listenfd);
+	    exit(1);
+	}
 
 	Bind(listenfd, (SA *) &servaddr, sizeof(servaddr));
 
@@ -49,156 +85,183 @@ main(int argc, char **argv)
 
 	Signal(SIGCHLD, sig_chld);	/* must call waitpid() */
 	
-	int i = 0;
+	
+	int i = 0; // room index for child processes
+	
 	for (;;) {
-		/* 1st client */
-		clilen1 = sizeof(cliaddr1);
-		if ( (connfd1[i] = accept(listenfd, (SA *) &cliaddr1, &clilen1)) < 0) {
-			if (errno == EINTR)
-				continue;		/* back to next iteration of for() */
-			else
-				err_sys("accept error");
-		}
+	        /* parent process as acceptor */
+	        
+	        // reset connected[] flags
+	        for(int j = 0; j <  4; j++){
+		        is_connected[j] = false;
+	        }
+	        
+		/* j-th client */
+		for(int j = 0; j < 4;){
+		  // accept  j-th client
+		  clilen[j] = sizeof(cliaddr[j]);
+		  if ( (connfd[j][i] = accept(listenfd, (SA *) &cliaddr[j], &clilen[j])) < 0) {
+		      if (errno == EINTR)
+		          continue;		/* interrupted, back to next iteration of for() */
+		      else{
+		          printf("accept error: %s", strerror(errno)); 
+		          continue;
+		      }
+		  }
+		  
+		  /* recv j-th client's id */
+		  bzero(recvline, MAXLINE);
+		  if (Read(connfd[j][i], recvline, MAXLINE) == 0){
+	              err_quit("tcp serv: client terminated prematurely");
+	              continue;		/* interrupted, back to next iteration of for() */
+		  }
+		  
+		  printf("debug: recieved msg: \"%s\"\n", recvline);
+		  bzero(id[j], 32);
+		  sscanf(recvline, "%s", id[j]);
+		  
+		  /* reply to j-th client */
+		  bzero(sendline, MAXLINE);
+		  sprintf(sendline, "Welcome to Big Two arena. You are the #%d player. Wait for other players!\n", j + 1);
+		  Writen(connfd[j][i], sendline, strlen(sendline));
+		  
+		  // successfully add a client
+		  is_connected[j] = true;
+		  j++;
+                }
+		/* end of parent accepting stage */
 		
-		/* recv 1st client's id */
-		bzero(recvline, MAXLINE);
-		if (Read(connfd1[i], recvline, MAXLINE) == 0){
-		        err_quit("tcp serv: client terminated prematurely");
-		}
-		printf("debug: recieved msg: \"%s\"\n", recvline);
-		bzero(id1, MAXLINE / 2);
-		sscanf(recvline, "%s", id1);
+		/* tell clients about each other*/
+                bzero(sendline, MAXLINE);
+                sprintf(sendline, "Game is about to start! The #1~4 players are: %s, %s, %s, %s.\n", id[0], id[1], id[2], id[3]);
+                
+	        for(int j = 0; j < 4; j++){
+	          Writen(connfd[j][i], sendline, strlen(sendline));
+	        }
 		
-		/* reply to 1st client */
-		bzero(sendline, MAXLINE);
-		sprintf(sendline, "You are the 1st user. Wait for the second one!\n");
-		Writen(connfd1[i], sendline, strlen(sendline));
-		
-		/* 2nd client */
-		clilen2 = sizeof(cliaddr2);
-		if ( (connfd2[i] = accept(listenfd, (SA *) &cliaddr2, &clilen2)) < 0) {
-			if (errno == EINTR)
-				continue;		/* back to next iteration of for() */
-			else
-				err_sys("accept error");
-		}
-		
-		/* recv 2nd client's id */
-		bzero(recvline, MAXLINE);
-		if (Read(connfd2[i], recvline, MAXLINE) == 0){
-		        err_quit("tcp serv: client terminated prematurely");
-		}
-		printf("debug: recieved msg: \"%s\"\n", recvline);
-		bzero(id2, MAXLINE / 2);
-		sscanf(recvline, "%s", id2);
-		
-		/* tell 1st client about 2nd client*/
-		addrlen = sizeof(tcp_peeraddr);
-		Getpeername(connfd2[i], (struct sockaddr *) &tcp_peeraddr, &addrlen);  // store tcp localaddr
-		Inet_ntop(AF_INET, &(tcp_peeraddr.sin_addr), addr_str, INET_ADDRSTRLEN);  // convert to string
-		
-		bzero(sendline, MAXLINE);
-		sprintf(sendline, "The second user is %s from %s\n", id2, addr_str);
-		Writen(connfd1[i], sendline, strlen(sendline));
-		
-		/* reply to 2nd client */
-		bzero(sendline, MAXLINE);
-		sprintf(sendline, "You are the 2nd user.\n");
-		Writen(connfd2[i], sendline, strlen(sendline));
-		
-		/* tell 2nd client about 1st client*/
-		addrlen = sizeof(tcp_peeraddr);
-		Getpeername(connfd1[i], (struct sockaddr *) &tcp_peeraddr, &addrlen);  // store tcp localaddr
-		Inet_ntop(AF_INET, &(tcp_peeraddr.sin_addr), addr_str, INET_ADDRSTRLEN);  // convert to string
-		
-		bzero(sendline, MAXLINE);
-		sprintf(sendline, "The first user is %s from %s\n", id1, addr_str);
-		Writen(connfd2[i], sendline, strlen(sendline));
-		
-                /* accept 2 clients successfully, fork() a child server */
+                /* accept 4 clients successfully, fork() a child server */
 		if ( (childpid = Fork()) == 0) {
 			int			maxfdp1;
 			fd_set		rset;
-			bool cli_1_end = false, cli_2_end = false;
-			
+			int cli_turn = 0;
 			Close(listenfd);	/* close listening socket */
 			
-			FD_ZERO(&rset);
+			game.startGame();
+			
+			// game starts
 			for ( ; ; ) {
-				// Turn on bits for two descriptors
-				FD_SET(connfd1[i], &rset);  
-				FD_SET(connfd2[i], &rset);
-				maxfdp1 = max(connfd1[i], connfd2[i]) + 1; // max descriptor + 1
-				Select(maxfdp1, &rset, NULL, NULL, NULL);
-				
-				/* socket from client 1 is readable */
-				if (!cli_1_end && FD_ISSET(connfd1[i], &rset)) {
-					bzero(recvline, MAXLINE);
-					if (Read(connfd1[i], recvline, MAXLINE) == 0){
-						printf("str_cli: cli1 has left\n");
-						cli_1_end = true;
-					}
-					if(!cli_1_end){
-						printf("debug: message from client 1: %s\n", recvline);
-						
-						/* send to client 2 */
-						bzero(sendline, MAXLINE);
-						sprintf(sendline, "(%s) %s", id1, recvline);
-						printf("debug: sending message to client 2: %s\n", sendline);
-						Writen(connfd2[i], sendline, strlen(sendline));
-					}else if(!cli_2_end){
-						/* inform client 2 that client 1 is leaving*/
-						bzero(sendline, MAXLINE);
-						sprintf(sendline, "(%s is leaving the room)\n", id1);
-						Writen(connfd2[i], sendline, strlen(sendline));
-					}else{
-						/* inform client 2 that client 1 has left*/
-						bzero(sendline, MAXLINE);
-						sprintf(sendline, "(%s left the room)\n", id1);
-						Writen(connfd2[i], sendline, strlen(sendline));
-						Shutdown(connfd1[i], SHUT_WR);  /* send FIN to client 1*/
-						Read(connfd1[i], recvline, MAXLINE);
-						break;
-					}
-				}
-				/* socket from client 2 is readable */
-				if (!cli_2_end && FD_ISSET(connfd2[i], &rset)) {
-					bzero(recvline, MAXLINE);
-					if (Read(connfd2[i], recvline, MAXLINE) == 0){
-						printf("str_cli: cli2 has left\n");
-						cli_2_end = true;
-					}
-					if(!cli_2_end){
-						printf("debug: message from client 2: %s\n", recvline);
-						
-						/* send to client 1 */
-						bzero(sendline, MAXLINE);
-						sprintf(sendline, "(%s) %s", id2, recvline);
-						printf("debug: sending message to client 1: %s\n", sendline);
-						Writen(connfd1[i], sendline, strlen(sendline));
-					}else if(!cli_1_end){
-						/* inform client 1 that client 2 is leaving*/
-						bzero(sendline, MAXLINE);
-						sprintf(sendline, "(%s is leaving the room)\n", id2);
-						Writen(connfd1[i], sendline, strlen(sendline));
-					}else{
-						/* inform client 1 that client 2 has left*/
-						bzero(sendline, MAXLINE);
-						sprintf(sendline, "(%s left the room)\n", id2);
-						Writen(connfd1[i], sendline, strlen(sendline));
-						Shutdown(connfd2[i], SHUT_WR);  /* send FIN to client 2*/
-						Read(connfd2[i], recvline, MAXLINE);
-						break;
-					}
-				}
-			}
-			/* both clients have terminated, exit */
-			exit(0);
+			    // Turn on bits for 4 descriptors
+		            FD_ZERO(&rset);
+		            maxfdp1 = -1;
+			    for(int j = 0; j < 4; j++){
+                                if(is_connected[j]){
+                                    FD_SET(connfd[j][i], &rset);
+                                    maxfdp1 = max(maxfdp1, connfd[j][i] + 1);  // max descriptor + 1
+	                        }
+	                    }
+	                    if(maxfdp1 < 0){
+	                        // all clients have left, goto exit()
+	                        break;
+	                    }
+			    Select(maxfdp1, &rset, NULL, NULL, NULL);
+			    
+			    for(int j = 0; j < 4; j++){
+			    
+			        /* socket from client j is readable */
+			        if ( is_connected[j] && FD_ISSET(connfd[j][i], &rset) ){
+			            int n;  // read() return
+				    bzero(recvline, MAXLINE);
+				    n = Read(connfd[j][i], recvline, MAXLINE);
+				    
+				    // check read() return value
+				    if(n <= 0){
+					// get error
+			                int error_code;
+                                        socklen_t error_code_len = sizeof(error_code);
+                                        Getsockopt(connfd[j][i], SOL_SOCKET, SO_ERROR, &error_code, &error_code_len);
+                                        printf("socket error: %s\n", strerror(error_code));
+                                        
+                                        if(n < 0 || error_code == ECONNRESET || error_code == EPIPE){
+                                            // ungraceful
+                                            printf("str_serv: cli#%d has left ungracefully\n", j + 1);
+			                }else{ // n == 0 && socket connected
+			                    // graceful
+                                            printf("str_serv: cli#%d is leaving gracefully\n", j + 1);
+                                            
+                                            /* reply to leaving client */
+                                            bzero(sendline, MAXLINE);
+                                            sprintf(sendline, "Bye!\n");
+                                            printf("debug: sending message to client#%d: %s\n", j + 1, sendline);
+                                            Writen(connfd[j][i], sendline, strlen(sendline));
+                                            
+                                            if(shutdown(connfd[j][i], SHUT_WR) < 0 && (error_code = errno) == ENOTCONN){
+                                                // error occur after raed()
+                                                printf("str_serv: cli#%d has left ungracefully\n", j + 1);
+                                                printf("errorno: %s\n", strerror(error_code));
+                                            }else{
+                                                printf("str_serv: cli#%d has left gracefully\n", j + 1);
+                                            }
+			                }
+			                
+			                /* broadcast to other clients about the leaving*/
+				        bzero(sendline, MAXLINE);
+				        sprintf(sendline, "(%s left the room.)\n", id[j]);
+				        printf("debug: sending message to clients: %s\n", sendline);
+				        
+				        
+				        for(int k = 0; k < 4; k++){
+			                    if((k != j) && is_connected[k]){
+			                        Writen(connfd[k][i], sendline, strlen(sendline));
+				            }
+				        }
+				        
+				        // set flags
+				        is_connected[j] = false;
+				        close(connfd[j][i]);
+				    }else{
+			                /* normal message */
+				        printf("debug: message from client#%d: %s\n", j + 1, recvline);
+				        
+				        /* broadcast to other clients */
+				        bzero(sendline, MAXLINE);
+				        sprintf(sendline, "(%s) %s\n", id[j], recvline);
+				        if(cli_turn == j){
+				            // his turn to speak
+				            printf("debug: sending message to clients: %s\n", sendline);
+				            for(int k = 0; k < 4; k++){
+				                if(is_connected[k]){
+			                            Writen(connfd[k][i], sendline, strlen(sendline));
+				                }
+				            }
+				            // next player's turn
+				            cli_turn = (cli_turn + 1) % 4;
+				        }else{
+				            // not his turn
+				            printf("debug: not client#%d's turn\n", j + 1);
+				        }
+				    }
+		                }
+		                // update board state to players
+		                if(!game.isGameOver()){
+		                    for(int k = 0; k < 4; k++){
+			                if(is_connected[k]){
+			                    bzero(sendline, MAXLINE);
+		                            game.displayGameStateForPlayer(k, id[k], sendline);
+		                            Writen(connfd[k][i], sendline, strlen(sendline));
+			                }
+			            }
+		                }
+			        /* next client */
+			    }
+		    }
+		    /* all clients have terminated, exit */
+		    exit(0);
 		}
 		
 		/* parent closes connected socket */
-		Close(connfd1[i]);
-		Close(connfd2[i]);
+		for(int j = 0; j < 4; j++){
+		  Close(connfd[j][i]);
+		}
 		
 		/* increment room number */
                 i++;
