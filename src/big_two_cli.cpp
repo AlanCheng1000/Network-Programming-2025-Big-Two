@@ -1,5 +1,5 @@
 extern "C"{
-  #include "../../lib/unp.h"
+  #include "../../../lib/unp.h"
   #include  <string.h>
   #include  <stdio.h>
   #include <string.h>
@@ -34,10 +34,10 @@ void big2_cli(FILE *fp, int sockfd)
     Writen(sockfd, id, strlen(id));
     printf("sent: %s\n", id);
     
-    readline(sockfd, recvline, MAXLINE);
+    Read(sockfd, recvline, MAXLINE);
     printf("recv: %s", recvline);
     
-    readline(sockfd, recvline, MAXLINE);
+    Read(sockfd, recvline, MAXLINE);
     printf("recv: %s", recvline);
     
     stdineof = 0;
