@@ -35,16 +35,16 @@ private:
     std::vector<bool> activePlayers;
 
     bool isLegalFollow(const std::vector<Card>& move) const;
-    bool ClearRound() const;
     int nextActivePlayer(int from) const;
     int activeCount() const;
-    void resetRound();
-    bool removeFromHand(int playerIndex, const std::vector<Card>& move);
+    bool ClearRound() const;
 public:
     Game();
+    void resetRound();
     std::vector<bool> passedRound;
     int findStartingPlayer() const;
     void checkValidPlay(const std::vector<Card>& move);
+    bool removeFromHand(int playerIndex, const std::vector<Card>& move);
 
     void startGame();
     void startHumanGame();

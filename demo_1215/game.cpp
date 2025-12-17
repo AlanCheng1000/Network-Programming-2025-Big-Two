@@ -152,8 +152,9 @@ void Game::resetRound(){
 }
 
 void Game::checkValidPlay(const std::vector<Card>& move){
-    if (!removeFromHand(currentPlayer, move)) return; // Should not happen if isLegalFollow is used properly. Just in case.
-
+    if (!removeFromHand(currentPlayer, move)){ // Should not happen if isLegalFollow is used properly. Just in case.
+        return;
+    }
     lastPlay   = Combination(move);
     lastPlayer = currentPlayer;
 
@@ -363,8 +364,13 @@ void Game::displayGameState() const {
 void Game::displayGameStateForPlayer(int player_seat, const char *player_name, char *buffer) const{
     std::ostringstream msg; 
     msg << "--------------------------------\n";
+    msg << "| cards left |";
+    for(int i = 0; i < TOTAL_PLAYERS; ++i){
+        msg << " #" << i + 1 << ":" << players[i]->getHand().HandSize() << " |";
+    }
+    msg << "\n";
     msg << "(Abbreviations: C for Club; D for Diamond; H for Heart; S for Spades.)" << "\n";
-    msg << "Player #" << player_seat + 1 << " " << player_name << " hand: "
+    msg << "Player #" << player_seat + 1 << " \"" << player_name << "\" hand: "
               << players[player_seat]->getHand().HandToString();
     if (!activePlayers[player_seat]) msg << " (Inactive)";
     msg << "\n";
@@ -372,12 +378,12 @@ void Game::displayGameStateForPlayer(int player_seat, const char *player_name, c
     std::cout << "\n";
     if (firstPlay) msg << "First play.\n";
     msg << "Current round: " << currentRound << "\n";
-    msg << "Current player: Player " << currentPlayer + 1 << "\n";
+    msg << "Current player: player#" << currentPlayer + 1 << "\n";
     msg << "Last play: " << comboToString(lastPlay.getCards()) << "\n";
     msg << "Players passed this round:";
     for(int i = 0; i < TOTAL_PLAYERS; ++i){
         if (!activePlayers[i]) continue;
-        if (passedRound[i]) msg << " " << i + 1;
+        if (passedRound[i]) msg << " #" << i + 1;
     }
     msg << "\n";
     msg << "--------------------------------\n";

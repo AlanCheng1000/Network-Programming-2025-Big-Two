@@ -207,7 +207,22 @@ main(int argc, char **argv)
 	                    }
 			    Select(maxfdp1, &rset, NULL, NULL, NULL);
 			    
+			    cli_turn = game.getCurrentPlayer();
+			    
 			    for(int j = 0; j < 4; j++){
+			        
+			        if(j == cli_turn && game.passedRound[j] == false && !is_connected[cli_turn]){
+			            // auto play/pass
+			            game.passedRound[j] = true;
+		                    game.nextTurn();
+		                    cli_turn = game.getCurrentPlayer();
+		                    // j has passed, check if two out of the other three has passed
+	                            if((game.passedRound[(j+1)%4] && game.passedRound[(j+2)%4]) 
+	                            || (game.passedRound[(j+2)%4] && game.passedRound[(j+3)%4])
+	                            || (game.passedRound[(j+3)%4] && game.passedRound[(j+1)%4])){
+	                                game.resetRound();
+	                            }
+			        }
 			    
 			        /* socket from client j is readable */
 			        if ( is_connected[j] && FD_ISSET(connfd[j][i], &rset) ){
@@ -217,9 +232,6 @@ main(int argc, char **argv)
 				    
 				    // check read() return value
 				    if(n <= 0){
-				        // player leaves
-				        game.getPlayers()[j]->deactivate();
-				        
 					// get error
 			                int error_code;
                                         socklen_t error_code_len = sizeof(error_code);
@@ -250,7 +262,7 @@ main(int argc, char **argv)
 			                
 			                /* broadcast to other clients about the leaving*/
 				        bzero(sendline, MAXLINE);
-				        sprintf(sendline, "(%s left the room.)\n", id[j]);
+				        sprintf(sendline, "(player #%d \"%s\" left the room.)\n", j + 1, id[j]);
 				        printf("debug: sending message to clients: %s\n", sendline);
 				        
 				        
@@ -284,10 +296,16 @@ main(int argc, char **argv)
 				                printf("debug: sending message to client#%d: %s\n", j + 1, sendline);
 				                
 				                Writen(connfd[j][i], sendline, strlen(sendline));
-				                cli_turn = (cli_turn + 1) % 4;
 				                game.passedRound[j] = true;
 				                game.nextTurn();
 				                cli_turn = game.getCurrentPlayer();
+				                // j has passed, check if two out of the other three has passed
+			                        if((game.passedRound[(j+1)%4] && game.passedRound[(j+2)%4]) 
+			                        || (game.passedRound[(j+2)%4] && game.passedRound[(j+3)%4])
+			                        || (game.passedRound[(j+3)%4] && game.passedRound[(j+1)%4])){
+			                            game.resetRound();
+			                        }
+				                
 				            }else{
 			                        // treat received index
 			                        int action = -1;
@@ -298,26 +316,32 @@ main(int argc, char **argv)
 			                            cards_to_play = game.getLegalActions(j)[action];
 			                            this_combination = Combination(cards_to_play);
 			                            
-			                            // delete card from hand
-			                            game.removeFromHand(j, cards_to_play);
-			                            printf("delete success\n");
 			                            // set play effect
-			                            game.checkValidPlay(cards_to_play);
-			                            printf("checkValid success\n");
-			                            game.setLastPlay(this_combination);
-			                            printf("setLastPlay success\n");
+			                            if(cards_to_play.size() != 0){
+			                                game.checkValidPlay(cards_to_play);
+			                                game.setLastPlay(this_combination);
+			                            }
 			                        }
 			                        
 			                        
 			                        bzero(sendline, MAXLINE);
-				                sprintf(sendline, "(%s)\n", id[j]);
+				                sprintf(sendline, "(player#%d \"%s\")", j + 1, id[j]);
 				                if(cards_to_play.size() == 0){
-				                    strcat(sendline, " PASS");
+				                    game.passedRound[j] = true;
+				                    game.nextTurn();
+				                    strcat(sendline, " PASS\n");
+				                    // j has passed, check if two out of the other three has passed
+				                    if((game.passedRound[(j+1)%4] && game.passedRound[(j+2)%4]) 
+				                    || (game.passedRound[(j+2)%4] && game.passedRound[(j+3)%4])
+				                    || (game.passedRound[(j+3)%4] && game.passedRound[(j+1)%4])){
+				                        game.resetRound();
+				                    }
 				                }
 				                for(int l = 0; l < (int)cards_to_play.size(); l++){
 				                    strcat(sendline, " ");
 				                    strcat(sendline, cards_to_play[l].CardToString().c_str());
 				                }
+				                strcat(sendline, "\n");
 				                
 				                // broadcast to others
 				                printf("debug: sending message to clients: %s\n", sendline);
@@ -328,6 +352,7 @@ main(int argc, char **argv)
 				                }
 			                        
 			                        // next player's turn
+			                        // game.nextTurn();
 			                        cli_turn = game.getCurrentPlayer();
 				            }
 				        }else{
@@ -346,6 +371,8 @@ main(int argc, char **argv)
 	                            for(int k = 0; k < 4; k++){
 	                                Writen(connfd[k][i], sendline, strlen(sendline));
 	                            }
+	                            // score
+	                            exit(0);
 	                        }
 			        /* next client */
 			    }
