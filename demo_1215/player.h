@@ -29,11 +29,14 @@ public:
 
     virtual std::vector<Card> playTurn(const Combination& lastPlay, const std::vector<std::vector<Card>>& legalActions, bool canPass) = 0;
     virtual std::string getTypeName() const = 0;
+    
+    std::vector<Card> playTurnAction(const Combination& lastPlay, const std::vector<std::vector<Card>>& legalActions, bool canPass, const int connfd, char *sendline, char *recvline, bool *is_connected);
 };
 
 class HumanPlayer final : public Player {
 public:
     explicit HumanPlayer(int seatIndex, int DB_id = -1);
+    
     std::vector<Card> playTurn(const Combination& lastPlay, const std::vector<std::vector<Card>>& legalActions, bool canPass) override;
     std::string getTypeName() const override;
 };

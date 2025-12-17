@@ -1,5 +1,10 @@
 #include "game.h"
 
+#include <iostream>
+#include <algorithm>
+#include <random>
+#include <iterator>
+
 extern "C"{
   #include "../../../lib/unp.h"
   #include <stdbool.h>
@@ -65,6 +70,12 @@ main(int argc, char **argv)
 	for (;;) {
 	        /* parent process as acceptor */
 	        
+	        /* shuffle the play order */
+	        std::vector<int> seatOrder = {0, 1, 2, 3};
+                std::random_device rd;
+                std::mt19937 g(rd());
+                std::shuffle(seatOrder.begin(), seatOrder.end(), g);
+	        
 	        // reset connected[] flags
 	        for(int j = 0; j <  4; j++){
 		        is_connected[j] = false;
@@ -72,9 +83,11 @@ main(int argc, char **argv)
 	        
 		/* j-th client */
 		for(int j = 0; j < 4;){
+		  int seat_id = seatOrder[j];
+		  
 		  // accept  j-th client
-		  clilen[j] = sizeof(cliaddr[j]);
-		  if ( (connfd[j][i] = accept(listenfd, (SA *) &cliaddr[j], &clilen[j])) < 0) {
+		  clilen[seat_id] = sizeof(cliaddr[seat_id]);
+		  if ( (connfd[seat_id][i] = accept(listenfd, (SA *) &cliaddr[seat_id], &clilen[seat_id])) < 0) {
 		      if (errno == EINTR)
 		          continue;		/* interrupted, back to next iteration of for() */
 		      else{
@@ -85,39 +98,48 @@ main(int argc, char **argv)
 		  
 		  /* recv j-th client's id */
 		  bzero(recvline, MAXLINE);
-		  if (Read(connfd[j][i], recvline, MAXLINE) == 0){
+		  if (Read(connfd[seat_id][i], recvline, MAXLINE) == 0){
 	              err_quit("tcp serv: client terminated prematurely");
 	              continue;		/* interrupted, back to next iteration of for() */
 		  }
 		  
 		  printf("debug: recieved msg: \"%s\"\n", recvline);
-		  bzero(id[j], 32);
-		  sscanf(recvline, "%s", id[j]);
+		  bzero(id[seat_id], 32);
+		  sscanf(recvline, "%s", id[seat_id]);
 		  
 		  /* reply to j-th client */
 		  bzero(sendline, MAXLINE);
-		  sprintf(sendline, "Welcome to Big Two arena. You are the #%d player. Wait for other players!\n", j + 1);
-		  Writen(connfd[j][i], sendline, strlen(sendline));
+		  sprintf(sendline, "Welcome to Big Two arena. You are the #%d player. Wait for other players!\n", seat_id + 1);
+		  Writen(connfd[seat_id][i], sendline, strlen(sendline));
 		  
 		  // successfully add a client
-		  is_connected[j] = true;
+		  is_connected[seat_id] = true;
 		  j++;
                 }
 		/* end of parent accepting stage */
 		
-		/* tell clients about each other*/
+		/* game about to start */
                 bzero(sendline, MAXLINE);
-                sprintf(sendline, "Game is about to start! The #1~4 players are: %s, %s, %s, %s.\n", id[0], id[1], id[2], id[3]);
+                sprintf(sendline, "Four players joined. Game is about to start!\n");
                 printf("debug: broadcasting \"%s\"\n", sendline);
-                
 	        for(int j = 0; j < 4; j++){
 	          Writen(connfd[j][i], sendline, strlen(sendline));
 	        }
 	        
-	        /* tell clients about each other*/
-	        usleep(1000);
+		/* tell clients about each other*/
+	        bzero(sendline, MAXLINE);
+                sprintf(sendline, "The #1~4 players are: %s, %s, %s, %s.\n", id[0], id[1], id[2], id[3]);
+                printf("debug: broadcasting \"%s\"\n", sendline);
+	        for(int j = 0; j < 4; j++){
+	          Writen(connfd[j][i], sendline, strlen(sendline));
+	        }
+	        
+	        /* tell clients about starting player*/
+	        game.startHumanGame();
+	        int cli_turn = game.findStartingPlayer();  // flag for who's turn to play
+	        
                 bzero(sendline, MAXLINE);
-                sprintf(sendline, "C for Club; D for Diamond; H for Heart; S for Spades.\n");
+                sprintf(sendline, "PLayer #%d %s holds 3C and starts the first play.\n", cli_turn + 1, id[cli_turn]);
                 printf("debug: broadcasting \"%s\"\n", sendline);
                 
 	        for(int j = 0; j < 4; j++){
@@ -128,7 +150,6 @@ main(int argc, char **argv)
 		if ( (childpid = Fork()) == 0) {
 			int			maxfdp1;
 			fd_set		rset;
-			int cli_turn = 0;
 			Close(listenfd);	/* close listening socket */
 			
 			game.startGame();
@@ -139,7 +160,6 @@ main(int argc, char **argv)
 		          game.displayGameStateForPlayer(j, id[j], sendline);
 		          printf("debug: sending to player#%d: \"%s\"", j + 1, sendline);
 	                  Writen(connfd[j][i], sendline, strlen(sendline));
-	                  usleep(1000);
 	                }
 			
 			// game starts
@@ -227,6 +247,11 @@ main(int argc, char **argv)
 			                            Writen(connfd[k][i], sendline, strlen(sendline));
 				                }
 				            }
+				            // treat action from player
+				            // char peek_num = recvline[0]; // peek 0(pass), 1(single), 2(pair), 5(5-combinations)
+				            HumanPlayer *this_player = dynamic_cast<HumanPlayer*>(game.getPlayers()[j].get());
+				            std::vector<Card> cards_to_play = this_player->playTurnAction(game.getLastPlay(), game.getLegalActions(j), true, connfd[j][i], sendline, recvline, is_connected);
+				            
 				            // next player's turn
 				            cli_turn = (cli_turn + 1) % 4;
 				        }else{
@@ -235,6 +260,16 @@ main(int argc, char **argv)
 				        }
 				    }
 		                }
+		                // if game is over
+		                if(game.isGameOver()){
+	                            /* broadcast game ending message */
+	                            bzero(sendline, MAXLINE);
+	                            sprintf(sendline, "Game is over. Congrats on our winner player#%d: %s!\n", j + 1, id[j]);
+                                    printf("debug: broadcasting \"%s\"\n", sendline);
+	                            for(int k = 0; k < 4; k++){
+	                                Writen(connfd[k][i], sendline, strlen(sendline));
+	                            }
+	                        }
 			        /* next client */
 			    }
 	                    // update board state to players
@@ -244,7 +279,6 @@ main(int argc, char **argv)
 		                        bzero(sendline, MAXLINE);
 	                                game.displayGameStateForPlayer(j, id[j], sendline);
 	                                Writen(connfd[j][i], sendline, strlen(sendline));
-	                                usleep(1000);
 		                    }
 		                }
 	                    }

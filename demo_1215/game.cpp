@@ -57,6 +57,32 @@ void Game::startGame() {
     std::cout << "Player " << currentPlayer+1 << " holds 3C and starts the first play.\n";
 }
 
+void Game::startHumanGame() {
+    players.clear();
+    for (int i = 0; i < TOTAL_PLAYERS; ++i)
+        players.emplace_back(std::make_unique<HumanPlayer>(i));
+
+    deck.reset();
+    deck.shuffle();
+
+    for (int i = 0; i < 13; ++i) {
+        for (auto& p : players) p->addCard(deck.dealCard());
+    }
+    for (auto& p : players) p->getHand().sortHand();
+
+    lastPlay     = Combination();
+    lastPlayer   = -1;
+    firstPlay    = true;
+    currentRound = 1;
+    gameOver     = false;
+    winnerIndex  = -1;
+    passedRound.assign(TOTAL_PLAYERS, false);
+
+    // Find 3C holder
+    currentPlayer = findStartingPlayer();
+    std::cout << "Player " << currentPlayer+1 << " holds 3C and starts the first play.\n";
+}
+
 int Game::findStartingPlayer() const {
     for (int i = 0; i < TOTAL_PLAYERS; ++i) {
         const auto& cards = players[i]->getHand().getCards();
@@ -336,6 +362,7 @@ void Game::displayGameState() const {
 void Game::displayGameStateForPlayer(int player_seat, const char *player_name, char *buffer) const{
     std::ostringstream msg; 
     msg << "--------------------------------\n";
+    msg << "(Abbreviations: C for Club; D for Diamond; H for Heart; S for Spades.)" << "\n";
     msg << "Player #" << player_seat + 1 << " " << player_name << " hand: "
               << players[player_seat]->getHand().HandToString();
     if (!activePlayers[player_seat]) msg << " (Inactive)";
@@ -353,9 +380,12 @@ void Game::displayGameStateForPlayer(int player_seat, const char *player_name, c
     }
     msg << "\n";
     msg << "--------------------------------\n";
+    msg << "If it's your turn press any key to play\n";
+    
+    // cpp str to c-style string
     const std::string final_msg = msg.str();
     const char *result = final_msg.c_str();
-    size_t size_to_copy = max(final_msg.length(), MAXLINE - 1);
+    size_t size_to_copy = min(final_msg.length(), MAXLINE - 1);
     memcpy(buffer, result, size_to_copy);
     return;
 }

@@ -34,9 +34,18 @@ void big2_cli(FILE *fp, int sockfd)
     Writen(sockfd, id, strlen(id));
     printf("sent: %s\n", id);
     
+    // read four players joined msg
+    bzero(recvline, MAXLINE);
     Read(sockfd, recvline, MAXLINE);
     printf("recv: %s", recvline);
     
+    // read players name msg
+    bzero(recvline, MAXLINE);
+    Read(sockfd, recvline, MAXLINE);
+    printf("recv: %s", recvline);
+    
+    // read abbreviation msg
+    bzero(recvline, MAXLINE);
     Read(sockfd, recvline, MAXLINE);
     printf("recv: %s", recvline);
     
@@ -60,6 +69,7 @@ void big2_cli(FILE *fp, int sockfd)
         Select(maxfdp1, &rset, NULL, NULL, NULL);
 
 	if (FD_ISSET(sockfd, &rset)) {  /* socket is readable */
+	    bzero(recvline, MAXLINE);
 	    n = read(sockfd, recvline, MAXLINE);
 	    if (n == 0) {
        		if (stdineof == 1)
@@ -70,7 +80,6 @@ void big2_cli(FILE *fp, int sockfd)
                 };
             }
 	    else if (n > 0) {
-	        recvline[n] = '\0';
 	        printf("\x1B[0;36m%s\x1B[0m", recvline);
 	        fflush(stdout);
 	    };

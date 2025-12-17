@@ -37,7 +37,6 @@ private:
 
     bool isLegalFollow(const std::vector<Card>& move) const;
     bool ClearRound() const;
-    int findStartingPlayer() const;
     int nextActivePlayer(int from) const;
     int activeCount() const;
     void resetRound();
@@ -46,7 +45,9 @@ private:
 public:
     Game();
 
+    int findStartingPlayer() const;
     void startGame();
+    void startHumanGame();
     bool takeTurn();
     void runAutoRound(int maxTurns = 1000);
     void nextTurn();
