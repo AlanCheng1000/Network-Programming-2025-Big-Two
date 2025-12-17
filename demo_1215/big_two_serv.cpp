@@ -269,21 +269,13 @@ main(int argc, char **argv)
 				        
 				        /* broadcast to other clients */
 				        if(cli_turn == j){
-				            bzero(sendline, MAXLINE);
-				            sprintf(sendline, "(%s) %s\n", id[j], recvline);
-				            // his turn speak
-				            printf("debug: sending message to clients: %s\n", sendline);
-				            for(int k = 0; k < 4; k++){
-				                if(is_connected[k]){
-			                            Writen(connfd[k][i], sendline, strlen(sendline));
-				                }
-				            }
-				            
 				            // treat action from player
 				            // char peek_num = recvline[0]; // peek 0(pass), 1(single), 2(pair), 5(5-combinations)
 				            // HumanPlayer *this_player = dynamic_cast<HumanPlayer*>(game.getPlayers()[j].get());
 				            // std::vector<Card> cards_to_play = this_player->playTurnAction(game.getLastPlay(), game.getLegalActions(j), true, connfd[j][i], sendline, recvline, is_connected);
 				            
+				            std::vector<Card> cards_to_play;
+				            Combination this_combination;
 				            
 				            // if no combo available
 				            if(game.getLegalActions(j).empty()){
@@ -295,24 +287,49 @@ main(int argc, char **argv)
 				                cli_turn = (cli_turn + 1) % 4;
 				                game.passedRound[j] = true;
 				                game.nextTurn();
-				                continue;
+				                cli_turn = game.getCurrentPlayer();
+				            }else{
+			                        // treat received index
+			                        int action = -1;
+			                        sscanf(recvline, "%d", &action);
+			                        
+			                        if(action < (int)game.getLegalActions(j).size() && action >= 0){
+			                            // legal action in range
+			                            cards_to_play = game.getLegalActions(j)[action];
+			                            this_combination = Combination(cards_to_play);
+			                            
+			                            // delete card from hand
+			                            game.removeFromHand(j, cards_to_play);
+			                            printf("delete success\n");
+			                            // set play effect
+			                            game.checkValidPlay(cards_to_play);
+			                            printf("checkValid success\n");
+			                            game.setLastPlay(this_combination);
+			                            printf("setLastPlay success\n");
+			                        }
+			                        
+			                        
+			                        bzero(sendline, MAXLINE);
+				                sprintf(sendline, "(%s)\n", id[j]);
+				                if(cards_to_play.size() == 0){
+				                    strcat(sendline, " PASS");
+				                }
+				                for(int l = 0; l < (int)cards_to_play.size(); l++){
+				                    strcat(sendline, " ");
+				                    strcat(sendline, cards_to_play[l].CardToString().c_str());
+				                }
+				                
+				                // broadcast to others
+				                printf("debug: sending message to clients: %s\n", sendline);
+				                for(int k = 0; k < 4; k++){
+				                    if(is_connected[k]){
+			                                Writen(connfd[k][i], sendline, strlen(sendline));
+				                    }
+				                }
+			                        
+			                        // next player's turn
+			                        cli_turn = game.getCurrentPlayer();
 				            }
-				            
-				            
-				            // treat received index
-				            int action = -1;
-				            sscanf(recvline, "%d", &action);
-				            
-				            if(action < (int)game.getLegalActions(j).size() && action >= 0){
-				                // legal action in range
-				                Combination this_combination = Combination(game.getLegalActions(j)[action]);
-				                // delete card from hand
-				                game.checkValidPlay(game.getLegalActions(j)[action]);
-				                game.setLastPlay(this_combination);
-				            }
-				            
-				            // next player's turn
-				            cli_turn = (cli_turn + 1) % 4;
 				        }else{
 				            // not his turn
 				            printf("debug: not client#%d's turn\n", j + 1);
