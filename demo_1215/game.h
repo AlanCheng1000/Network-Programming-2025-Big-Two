@@ -30,7 +30,6 @@ private:
     int currentPlayer;
     bool firstPlay;
     int currentRound;
-    std::vector<bool> passedRound;
     bool gameOver;
     int winnerIndex;
     std::vector<bool> activePlayers;
@@ -40,12 +39,13 @@ private:
     int nextActivePlayer(int from) const;
     int activeCount() const;
     void resetRound();
-    void checkValidPlay(const std::vector<Card>& move);
     bool removeFromHand(int playerIndex, const std::vector<Card>& move);
 public:
     Game();
-
+    std::vector<bool> passedRound;
     int findStartingPlayer() const;
+    void checkValidPlay(const std::vector<Card>& move);
+
     void startGame();
     void startHumanGame();
     bool takeTurn();

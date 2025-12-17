@@ -31,6 +31,7 @@ namespace {
 Game::Game() : lastPlay(), lastPlayer(-1), currentPlayer(0), firstPlay(true), currentRound(1), passedRound(TOTAL_PLAYERS, false), gameOver(false), winnerIndex(-1)
     , activePlayers(TOTAL_PLAYERS, true) {}
 
+
 void Game::startGame() {
     players.clear();
     for (int i = 0; i < TOTAL_PLAYERS; ++i)

@@ -136,7 +136,9 @@ main(int argc, char **argv)
 	        
 	        /* tell clients about starting player*/
 	        game.startHumanGame();
+	        
 	        int cli_turn = game.findStartingPlayer();  // flag for who's turn to play
+	        printf("debug: first player is #%d", cli_turn + 1);
 	        
                 bzero(sendline, MAXLINE);
                 sprintf(sendline, "PLayer #%d %s holds 3C and starts the first play.\n", cli_turn + 1, id[cli_turn]);
@@ -151,8 +153,6 @@ main(int argc, char **argv)
 			int			maxfdp1;
 			fd_set		rset;
 			Close(listenfd);	/* close listening socket */
-			
-			game.startGame();
 	        
 	                /* Initial board layout */
 	                for(int j = 0; j < 4; j++){
@@ -160,6 +160,34 @@ main(int argc, char **argv)
 		          game.displayGameStateForPlayer(j, id[j], sendline);
 		          printf("debug: sending to player#%d: \"%s\"", j + 1, sendline);
 	                  Writen(connfd[j][i], sendline, strlen(sendline));
+	                  
+	                  if(cli_turn == j){
+                              // 
+                              bzero(sendline, MAXLINE);
+                              sprintf(sendline, "Available combinations:\n");
+                              Writen(connfd[j][i], sendline, strlen(sendline));
+	                                    
+                              // show combo
+                              for(int k = 0; k < (int)game.getLegalActions(j).size(); k++){
+                                  bzero(sendline, MAXLINE);
+                                  sprintf(sendline, "[%d]", k);
+                                  for(int l = 0; l < (int)game.getLegalActions(j)[k].size(); l++){
+                                      strcat(sendline, " ");
+                                      strcat(sendline, game.getLegalActions(j)[k][l].CardToString().c_str());
+                                  }
+                                  strcat(sendline, "\n");
+                                      
+                                  // send
+                                  printf("debug: sending message to client#%d: %s\n", j + 1, sendline);
+                                  Writen(connfd[j][i], sendline, strlen(sendline));
+                              }
+				            
+	                      // enter msg
+	                      bzero(sendline, MAXLINE);
+	                      sprintf(sendline, "Enter a combination to play or pass: \n");
+	                      printf("debug: sending message to client#%d: %s\n", j + 1, sendline);
+	                      Writen(connfd[j][i], sendline, strlen(sendline));
+                            }
 	                }
 			
 			// game starts
@@ -189,6 +217,9 @@ main(int argc, char **argv)
 				    
 				    // check read() return value
 				    if(n <= 0){
+				        // player leaves
+				        game.getPlayers()[j]->deactivate();
+				        
 					// get error
 			                int error_code;
                                         socklen_t error_code_len = sizeof(error_code);
@@ -237,26 +268,55 @@ main(int argc, char **argv)
 				        printf("debug: message from client#%d: %s\n", j + 1, recvline);
 				        
 				        /* broadcast to other clients */
-				        bzero(sendline, MAXLINE);
-				        sprintf(sendline, "(%s) %s\n", id[j], recvline);
 				        if(cli_turn == j){
-				            // his turn to speak
+				            bzero(sendline, MAXLINE);
+				            sprintf(sendline, "(%s) %s\n", id[j], recvline);
+				            // his turn speak
 				            printf("debug: sending message to clients: %s\n", sendline);
 				            for(int k = 0; k < 4; k++){
 				                if(is_connected[k]){
 			                            Writen(connfd[k][i], sendline, strlen(sendline));
 				                }
 				            }
+				            
 				            // treat action from player
 				            // char peek_num = recvline[0]; // peek 0(pass), 1(single), 2(pair), 5(5-combinations)
-				            HumanPlayer *this_player = dynamic_cast<HumanPlayer*>(game.getPlayers()[j].get());
-				            std::vector<Card> cards_to_play = this_player->playTurnAction(game.getLastPlay(), game.getLegalActions(j), true, connfd[j][i], sendline, recvline, is_connected);
+				            // HumanPlayer *this_player = dynamic_cast<HumanPlayer*>(game.getPlayers()[j].get());
+				            // std::vector<Card> cards_to_play = this_player->playTurnAction(game.getLastPlay(), game.getLegalActions(j), true, connfd[j][i], sendline, recvline, is_connected);
+				            
+				            
+				            // if no combo available
+				            if(game.getLegalActions(j).empty()){
+				                bzero(sendline, MAXLINE);
+		                                sprintf(sendline, "No legal actions. Forced PASS.\n");
+				                printf("debug: sending message to client#%d: %s\n", j + 1, sendline);
+				                
+				                Writen(connfd[j][i], sendline, strlen(sendline));
+				                cli_turn = (cli_turn + 1) % 4;
+				                game.passedRound[j] = true;
+				                game.nextTurn();
+				                continue;
+				            }
+				            
+				            
+				            // treat received index
+				            int action = -1;
+				            sscanf(recvline, "%d", &action);
+				            
+				            if(action < (int)game.getLegalActions(j).size() && action >= 0){
+				                // legal action in range
+				                Combination this_combination = Combination(game.getLegalActions(j)[action]);
+				                // delete card from hand
+				                game.checkValidPlay(game.getLegalActions(j)[action]);
+				                game.setLastPlay(this_combination);
+				            }
 				            
 				            // next player's turn
 				            cli_turn = (cli_turn + 1) % 4;
 				        }else{
 				            // not his turn
 				            printf("debug: not client#%d's turn\n", j + 1);
+				            continue;
 				        }
 				    }
 		                }
@@ -279,6 +339,33 @@ main(int argc, char **argv)
 		                        bzero(sendline, MAXLINE);
 	                                game.displayGameStateForPlayer(j, id[j], sendline);
 	                                Writen(connfd[j][i], sendline, strlen(sendline));
+	                                if(cli_turn == j){
+	                                    // 
+	                                    bzero(sendline, MAXLINE);
+	                                    sprintf(sendline, "Available combinations:\n");
+	                                    Writen(connfd[j][i], sendline, strlen(sendline));
+	                                    
+	                                    // show combo
+	                                    for(int k = 0; k < (int)game.getLegalActions(j).size(); k++){
+				                bzero(sendline, MAXLINE);
+		                                sprintf(sendline, "[%d]", k);
+				                for(int l = 0; l < (int)game.getLegalActions(j)[k].size(); l++){
+				                    strcat(sendline, " ");
+				                    strcat(sendline, game.getLegalActions(j)[k][l].CardToString().c_str());
+				                }
+				                strcat(sendline, "\n");
+				                
+				                // send
+				                printf("debug: sending message to client#%d: %s\n", j + 1, sendline);
+				                Writen(connfd[j][i], sendline, strlen(sendline));
+				            }
+				            
+				            // enter msg
+				            bzero(sendline, MAXLINE);
+				            sprintf(sendline, "Enter a combination to play or pass: \n");
+				            printf("debug: sending message to client#%d: %s\n", j + 1, sendline);
+				            Writen(connfd[j][i], sendline, strlen(sendline));
+	                                }
 		                    }
 		                }
 	                    }
