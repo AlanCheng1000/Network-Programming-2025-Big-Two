@@ -80,6 +80,9 @@ void big2_cli(FILE *fp, int sockfd)
                 };
             }
 	    else if (n > 0) {
+	    	if(recvline[0] == '-'){
+	    		clear_shell(stdout);
+	    	}
 	        printf("\x1B[0;36m%s\x1B[0m", recvline);
 	        fflush(stdout);
 	    };
