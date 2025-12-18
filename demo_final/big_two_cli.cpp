@@ -10,7 +10,7 @@ extern "C"{
 char id[MAXLINE];
 
 void clear_shell(FILE *fp){
-  fputs("\033[H\033[J", fp);
+  fputs("\033[H\033[2J", fp);
 }
 
 void clr_scr() {

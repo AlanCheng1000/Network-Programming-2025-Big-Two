@@ -128,6 +128,7 @@ main(int argc, char **argv)
 	        for(int j = 0; j < 4; j++){
 	          Writen(connfd[j][i], sendline, strlen(sendline));
 	        }
+	        usleep(100); // prevent overlapping msg
 	        
 		/* tell clients about each other*/
 	        bzero(sendline, MAXLINE);
