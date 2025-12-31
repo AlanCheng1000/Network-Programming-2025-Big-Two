@@ -4,10 +4,11 @@ A C/C++ base online card game
 Note:
 To compile the program, please make sure to put "demo_final" directory under the following structure:
 
-home/unpv13e/tcpcliserv/test/demo_final
-                                  |- 01.cpp
-                                  |- Makefile
-                                  |- big_two_cli
-                                  |- ...
+home/unpv13e/tcpcliserv/test/demo_final/...    
+>/demo_final   
+>|- 01.cpp   
+>|- Makefile   
+>|- big_two_cli   
+>|- ...
 
 (The "test" directory should be configured to put "demo_final")
