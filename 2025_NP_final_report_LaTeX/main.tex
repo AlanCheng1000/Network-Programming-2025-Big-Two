@@ -1,0 +1,291 @@
+\documentclass[a4paper, 12pt]{article}
+\usepackage{graphicx} % Inserting images
+\usepackage[top=2cm, bottom=2cm, left=1cm, right=1cm]{geometry}
+\usepackage{enumerate}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{tikz}
+\usepackage{multicol}
+\usepackage{bm}
+\usepackage{array}
+\usepackage{ulem}
+\usepackage{xcolor}
+    \definecolor{back_gray}{RGB}{210,210,210}
+    \definecolor{prog_green}{RGB}{0, 176, 80}
+    \definecolor{prog_purple}{RGB}{112, 48, 160}
+    \definecolor{prog_blue}{RGB}{0, 176, 240}
+    \definecolor{prog_brown}{RGB}{227, 108, 9}
+    \definecolor{prog_red}{RGB}{255, 0, 0}
+    \definecolor{google_gray}{RGB}{140, 140, 140}
+\usepackage{graphicx}
+\usepackage{fancyhdr}
+    \setlength{\headsep}{20pt}
+\usepackage{lastpage}
+\usepackage{titlesec}
+
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead{}
+\fancyfoot{}
+
+\titleformat{\section}{\bfseries}{}{0pt}{}
+
+\renewcommand{\footrulewidth}{0.4pt}
+\fancyfoot[R]{Page \textbf{\thepage} of \pageref{LastPage}}
+
+\begin{document}
+\setcounter{page}{1}
+\setlength{\parindent}{0pt}
+\begin{center}
+    {\large \textbf{Intro to Network Programming, 2025 Autumn}}\par
+    \vspace{20pt}
+    {\large \textbf{Final Project}}\par
+    \vspace{15pt}
+    {\large \textbf{Group 8: Big 2}}\par
+    \vspace{20pt}
+    {\large \textbf{Report}}\par
+\end{center}
+\vspace{9pt}
+\begin{flushright}
+    \begin{tabular}{rcr}
+        Author:&112550119&Chia-Chi Cheng\\
+        &112550145&Yen-Yu Chen\\
+        Prof.:&&Li-Hsing Yen
+    \end{tabular}
+\end{flushright}
+\section{Part A: Abstract}
+\fancyfoot[L]{$\bullet$\hspace{6pt}Part A: Abstract}
+\renewcommand{\arraystretch}{2}
+\begin{tabular}{lp{13.4cm}}
+    % 01: Intro
+    Introduction
+    &
+    This project is based on a simple yet widespread card game, Big 2.
+    In each game, there are four players, and each tries their best to clear their hands.
+    Players must follow the previous combination unless a new round starts.
+    The first player to clear their hand wins the game.\par
+    \vspace{6pt}
+    In terms of network design, this project adopts a server-oriented architecture.
+    The server takes charge of most of the work, such as establishing connections, configuring the games, controlling the gaming flow, broadcasting game states, and so on.
+    Clients play a minimal logical role; they mainly react to connection-related events and maintain the server-player interactions, including display aesthetics.
+    \\
+    % 02: Development environment
+    Development environment
+    &
+    Game logic $\rightarrow$ Windows
+    \par\vspace{6pt}
+    Network programming and final integration $\rightarrow$ Ubuntu
+    \par
+    \rule{13.4cm}{0.4pt}
+    \par
+    \vspace{6pt}
+    All code is written in C++, though network-related functions are in C format.
+    \\
+    % 03: Task allocation
+    Task allocation
+    &
+    112550119\hspace{9pt} Chia-Chi Cheng\hspace{12pt} Network programming, final integration
+    \par\vspace{6pt}
+    112550145\hspace{9pt} Yen-Yu Chen\hspace{27pt} Game logic, final integration
+\end{tabular}
+\newpage
+\section{Part B: Implementation}
+\fancyfoot[L]{$\bullet$\hspace{6pt}Part B: Implementation}
+\vspace{12pt}
+\begin{center}
+    \includegraphics[width=16cm]{structure_1229.png}
+    \par
+    \vspace{12pt}
+    {\small$\triangle$ The rough structure of our project.}
+\end{center}
+\newpage
+\textbf{Main Program: <Server\_Client>}\\
+\renewcommand{\arraystretch}{2}
+\begin{tabular}{p{5cm}p{13cm}}
+    % 1
+    big\_two\_serv.cpp
+    &
+    include: all game logic units, network libraries
+    \par
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Initialize and manage room creation, client connection/disconnection, and the overall game flow.
+        \item Shuffle the players' seat order during connection.
+        \item Provide board information, including current hand to all players; provide legal actions for the player of the current turn to choose from.
+        \item Automatically skip the player who has passed in the current round or is disconnected.
+        \item Be responsible for handling all abrupt disconnections from any client at any stage of the game flow, regardless of gracefulness. (However, demo logic fails to handle when there are exactly 2 players left and the current player disconnects.)
+    \end{enumerate}
+    \\% 2
+    <Server Implementation>
+    &
+    \par\vspace{-\baselineskip}
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Use fork() to create new rooms when 4 clients join.
+        \item Use select() to detect disconnections in real time, while maintaining a play-turn polling logic.
+    \end{enumerate}
+    \par
+    \vspace{12pt}
+    \\% 3
+    big\_two\_cli.cpp
+    &
+    include: network libraries
+    \par
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Initialize connection with the server and handle server disconnection.
+        \item Parse the received messages and use ANSI escape sequences to clear the shell for consistent display.
+    \end{enumerate}
+    \\% 4
+    <Client Implementation>
+    &
+    \par\vspace{-\baselineskip}
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Use ANSI escape sequence to clear the shell for display.
+    \end{enumerate}
+    \par
+    \vspace{12pt}
+\end{tabular}
+\par
+\newpage
+Subprogram: <Game\_logic>\\
+\renewcommand{\arraystretch}{2}
+\begin{tabular}{p{3.5cm}p{14.5cm}}
+    % 1
+    card.cpp
+    &
+    \par\vspace{-\baselineskip}
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Configure the basic object, card.
+        \item Support the conversion between card objects and strings.
+        \item Support the comparison of cards.
+    \end{enumerate}
+    \\% 2
+    hand.cpp
+    &
+    include: card.cpp
+    \par
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Based on the card object, configure the object for \textbf{each} player, hand.
+        \item Support the basic operations, such as appending, removing, and sorting cards.
+        \item Support the conversion from hand objects to strings.
+    \end{enumerate}
+    \\% 3
+    deck.cpp
+    &
+    include: card.cpp
+    \par
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Based on the card object, configure the object for \textbf{all} players, deck.
+        \item Set up the ``true'' deck, i.e., do dealing and shuffling.
+    \end{enumerate}
+    \\% 4
+    combination.cpp
+    &
+    include: card.cpp, hand.cpp
+    \par
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Define and identify the valid combinations.
+        \item Define and implement the rules for comparing the combinations.
+    \end{enumerate}
+    \\% 5
+    player.cpp
+    &
+    include: card.cpp, hand.cpp, combination.cpp
+    \par
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Set up the player information.
+        \item Manage the player status.
+    \end{enumerate}
+    \\% 6
+    game.cpp
+    &
+    include: card.cpp, hand.cpp, deck.cpp, combination.cpp, player.cpp
+    \par
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Integrate all aforementioned subprograms.
+        \item Control the game flow.
+        \item Supervise the game state.
+        \item Broadcast.
+    \end{enumerate}
+\end{tabular}
+\par
+\newpage
+\section{Part C: Results}
+\fancyfoot[L]{$\bullet$\hspace{6pt}Part C: Results}
+\begin{itemize}[left=0pt, itemsep=15pt]
+    \item Game initialization.
+        \begin{center}
+            \includegraphics[width=16cm]{init_stage.png}
+        \end{center}
+        \begin{itemize}[label=$\odot$, left=0pt, itemsep=9pt]
+            \item Clients are free to set their usernames.
+            \item Each client is assigned a random seating order once the username is set.
+        \end{itemize}
+    \item Broadcasting information.
+        \begin{center}
+            \includegraphics[width=16cm]{your_turn.png}
+        \end{center}
+        \begin{itemize}[label=$\odot$, left=0pt, itemsep=9pt]
+            \item Global broadcasting:
+                \begin{itemize}[label=$\blacktriangleright$, left=0pt, itemsep=6pt]
+                    \item Number of remaining cards of each player. (Line 1)
+                    \item Clarification of the abbreviation of four suits. (Line 2)
+                    \item Round status. (Line 4-8)
+                \end{itemize}
+            \item Local broadcasting:
+                \begin{itemize}[label=$\blacktriangleright$, left=0pt, itemsep=6pt]
+                    \item The hand of the current player. (Line 3)
+                    \item The available actions that the current player can choose from. (Line 11 onward)
+                \end{itemize}
+        \end{itemize}
+        \item Disconnection.
+            \begin{center}
+                \includegraphics[width=6cm]{player_has_left_message.png}
+            \end{center}
+        \begin{itemize}[label=$\odot$, left=0pt, itemsep=9pt]
+            \item Once a player disconnects, the server broadcasts to all remaining players.
+            \item Disconnected players will automatically call ``Pass'' in all subsequent rounds.
+        \end{itemize}
+        \newpage
+        \item End of game.
+            \begin{center}
+                \includegraphics[width=15cm]{game_over.png}
+            \end{center}
+        \begin{itemize}[label=$\odot$, left=0pt, itemsep=9pt]
+            \item Once a player clears the hand, the server broadcasts the winner. (Line 16)
+            \item Once a winner is determined, the game ends and the server closes all player connections.
+        \end{itemize}
+\end{itemize}
+\newpage
+\section{Part D: Conclusion}
+\fancyfoot[L]{$\bullet$\hspace{6pt}Part D: Conclusion}
+\begin{tabular}{p{5cm}p{13cm}}
+    % 1
+    <Skills We Learnt>
+    &
+    \par\vspace{-\baselineskip}
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item Multi-process programming with an acceptor and a game room manager for each game room.
+        \item The use of TCP network functions to establish connections.
+        \item How to handle abrupt disconnections at different server states with the help of error codes.
+        \item Object-oriented programming with network compatibility. 
+    \end{enumerate}
+    \par
+    \vspace{12pt}
+    \\% 2
+    <Future Improvements>
+    &
+    \par\vspace{-\baselineskip}
+    \begin{enumerate}[left=0pt, topsep=4pt, itemsep=0pt]
+        \item The client program should have been built with more local state tasks, such as generating card combinations.
+        \item In an advanced version, the client program should maintain a complete local game state, communicate with server, and present local state to user (as this is critical for real-time games and their UX).
+        \item Although not currently integrated into the final code, this project is able to be combined with the database functionality to support features such as data storage, user registration, identity verification (i.e., authentication), leaderboard display, and more.
+    \end{enumerate}
+\end{tabular}
+\par
+\newpage
+\section{Part E: Appendices and References}
+\fancyfoot[L]{$\bullet$\hspace{6pt}Part E: Appendices and References}
+GitHub link: https://github.com/AlanCheng1000/Network-Programming-2025-Big-Two.git
+
+
+\end{document}
